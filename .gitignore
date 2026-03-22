@@ -1,0 +1,11 @@
+.env
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store
+~$*.xlsx
+
+local_data/
+
+recipe_app/__pycache__/
+tests/__pycache__/
