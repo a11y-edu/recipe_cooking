@@ -18,6 +18,7 @@ from .config import (
     RETRIEVAL_TOP_K,
 )
 from .models import RecipeDocument
+from .supabase_store import SupabaseRecipeStore, SupabaseStoreError
 
 
 class RecipeRAGError(RuntimeError):
@@ -36,6 +37,7 @@ class RecipeRAG:
         timeout_seconds: int = OPENROUTER_TIMEOUT_SECONDS,
         top_k: int = RETRIEVAL_TOP_K,
         max_history_messages: int = MAX_CHAT_HISTORY_MESSAGES,
+        supabase_store: SupabaseRecipeStore | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.cache_path = Path(cache_path)
@@ -45,6 +47,7 @@ class RecipeRAG:
         self.timeout_seconds = timeout_seconds
         self.top_k = top_k
         self.max_history_messages = max_history_messages
+        self.supabase_store = supabase_store
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         self._embedding_cache = self._load_cache()
 
@@ -92,12 +95,15 @@ class RecipeRAG:
             "messages": messages,
             "temperature": 0.2,
         }
-        response = requests.post(
-            f"{self.api_base}/chat/completions",
-            headers=self._headers(),
-            json=payload,
-            timeout=self.timeout_seconds,
-        )
+        try:
+            response = requests.post(
+                f"{self.api_base}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise RecipeRAGError(f"OpenRouter chat request failed: {exc}") from exc
         if response.status_code >= 400:
             raise RecipeRAGError(self._extract_error_message(response))
         body = response.json()
@@ -110,9 +116,26 @@ class RecipeRAG:
         query_embedding = np.asarray(self._embed_text(question), dtype=float)
         chunk_vectors: list[np.ndarray] = []
         chunk_texts: list[tuple[str, str]] = []
-        for chunk in recipe.chunks:
-            chunk_vectors.append(np.asarray(self._get_or_create_embedding(chunk.chunk_id, chunk.text), dtype=float))
-            chunk_texts.append((chunk.title, chunk.text))
+
+        remote_rows = None
+        if self.supabase_store and self.supabase_store.is_configured():
+            try:
+                remote_rows = self.supabase_store.ensure_chunk_embeddings(
+                    recipe,
+                    embed_func=self._embed_text,
+                    embedding_model=self.embedding_model,
+                )
+            except SupabaseStoreError:
+                remote_rows = None
+
+        if remote_rows is not None:
+            for row in remote_rows:
+                chunk_vectors.append(np.asarray(row["embedding"], dtype=float))
+                chunk_texts.append((str(row["title"]), str(row["text"])))
+        else:
+            for chunk in recipe.chunks:
+                chunk_vectors.append(np.asarray(self._get_or_create_embedding(chunk.chunk_id, chunk.text), dtype=float))
+                chunk_texts.append((chunk.title, chunk.text))
 
         if not chunk_vectors:
             return [("Recipe context", recipe.chatbot_context)]
@@ -148,12 +171,15 @@ class RecipeRAG:
             "model": self.embedding_model,
             "input": text,
         }
-        response = requests.post(
-            f"{self.api_base}/embeddings",
-            headers=self._headers(),
-            json=payload,
-            timeout=self.timeout_seconds,
-        )
+        try:
+            response = requests.post(
+                f"{self.api_base}/embeddings",
+                headers=self._headers(),
+                json=payload,
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise RecipeRAGError(f"OpenRouter embeddings request failed: {exc}") from exc
         if response.status_code >= 400:
             raise RecipeRAGError(self._extract_error_message(response))
         body = response.json()

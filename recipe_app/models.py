@@ -62,6 +62,8 @@ class RecipeDocument:
     descriptor_code_counts: dict[str, int]
     chatbot_context: str
     chunks: list[RecipeChunk]
+    version_two_ingredients: list[IngredientLine]
+    version_two_steps: list[RecipeStep]
 
 
 @dataclass(slots=True)

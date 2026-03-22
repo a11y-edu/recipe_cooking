@@ -32,6 +32,7 @@ Important loader behavior:
 - Embedding cache: `local_data/embedding_cache.pkl`
 - Sidebar analytics: `local_data/corpus_insights.json`
 - Environment file: `.env`
+- Supabase schema: `supabase/schema.sql`
 
 ## Known Limitations
 
@@ -39,6 +40,7 @@ Important loader behavior:
 - VDD phrase matching is heuristic. When an exact span cannot be located, the UI falls back to a sentence-level cue marker.
 - There is no participant identity model yet beyond anonymous session ids.
 - Retrieval uses in-memory cosine similarity rather than a vector database, which is acceptable for the current 200-recipe dataset.
+- When Supabase is configured, recipes are read from `recipes` and chunk embeddings are read/written in `recipe_chunks`.
 
 ## Stable Interfaces To Preserve
 

@@ -265,7 +265,8 @@ h1, h2, h3, h4 {
     font-size: 0.9rem;
 }
 
-.stButton button {
+.stButton button,
+.stDownloadButton button {
     width: 100%;
     border-radius: 999px;
     border: 1px solid rgba(182, 91, 58, 0.25);

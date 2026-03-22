@@ -80,14 +80,16 @@ def load_recipe_store(workbook_path: str | Path) -> RecipeStore:
     workbook = load_workbook(workbook_path, data_only=True)
 
     metadata_by_id = _load_metadata(workbook["Recipe_Metadata"])
-    ingredients_by_id = _load_ingredients(workbook["Ingredients_List"])
-    sentences_by_id = _load_sentences(workbook["Procedural_Text"])
+    ingredients_by_id, version_two_ingredients_by_id = _load_ingredients(workbook["Ingredients_List"])
+    sentences_by_id, version_two_sentences_by_id = _load_sentences(workbook["Procedural_Text"])
     descriptors_by_key = _load_descriptors(workbook["Descriptor_Coding"])
 
     recipes: dict[str, RecipeDocument] = {}
     for recipe_id, metadata in metadata_by_id.items():
         ingredient_lines = ingredients_by_id.get(recipe_id, [])
+        version_two_ingredient_lines = version_two_ingredients_by_id.get(recipe_id, ingredient_lines)
         step_map = defaultdict(list)
+        version_two_step_map = defaultdict(list)
         all_descriptors: list[DescriptorMatch] = []
 
         for sentence in sentences_by_id.get(recipe_id, []):
@@ -106,6 +108,20 @@ def load_recipe_store(workbook_path: str | Path) -> RecipeStore:
             )
             all_descriptors.extend(resolved_descriptors)
 
+        version_two_source_sentences = version_two_sentences_by_id.get(recipe_id)
+        if version_two_source_sentences is None:
+            version_two_steps = []
+        else:
+            for sentence in version_two_source_sentences:
+                version_two_step_map[sentence.step_number].append(
+                    RecipeSentence(
+                        step_number=sentence.step_number,
+                        sentence_number=sentence.sentence_number,
+                        text=sentence.text,
+                        descriptors=[],
+                    )
+                )
+
         steps = [
             RecipeStep(
                 step_number=step_number,
@@ -116,6 +132,20 @@ def load_recipe_store(workbook_path: str | Path) -> RecipeStore:
             )
             for step_number, sentences in sorted(step_map.items(), key=lambda item: item[0])
         ]
+        version_two_steps = (
+            [
+                RecipeStep(
+                    step_number=step_number,
+                    sentences=sorted(
+                        sentences,
+                        key=lambda sentence: sentence.sentence_number,
+                    ),
+                )
+                for step_number, sentences in sorted(version_two_step_map.items(), key=lambda item: item[0])
+            ]
+            if version_two_step_map
+            else steps
+        )
 
         chatbot_context = _build_chatbot_context(metadata, ingredient_lines, steps, all_descriptors)
         chunks = _build_chunks(metadata, ingredient_lines, steps)
@@ -134,9 +164,90 @@ def load_recipe_store(workbook_path: str | Path) -> RecipeStore:
             descriptor_code_counts=dict(descriptor_code_counts),
             chatbot_context=chatbot_context,
             chunks=chunks,
+            version_two_ingredients=version_two_ingredient_lines,
+            version_two_steps=version_two_steps,
         )
 
     return RecipeStore(workbook_path=workbook_path, recipes=recipes)
+
+
+def build_recipe_document(
+    *,
+    recipe_id: str,
+    title: str,
+    category: str,
+    url: str = "",
+    star_rating: float | None = None,
+    review_count: int | None = None,
+    ingredient_lines: list[str] | None = None,
+    step_lines: list[str] | None = None,
+    version_two_ingredient_lines: list[str] | None = None,
+    version_two_step_lines: list[str] | None = None,
+) -> RecipeDocument:
+    metadata = {
+        "recipe_id": recipe_id,
+        "title": title,
+        "category": category,
+        "url": url,
+        "star_rating": star_rating,
+        "review_count": review_count,
+    }
+    ingredients = [
+        IngredientLine(line_number=index, full_text=line)
+        for index, line in enumerate(ingredient_lines or [], start=1)
+    ]
+    version_two_ingredients = [
+        IngredientLine(line_number=index, full_text=line)
+        for index, line in enumerate(version_two_ingredient_lines or ingredient_lines or [], start=1)
+    ]
+    steps = [
+        RecipeStep(
+            step_number=index,
+            sentences=[
+                RecipeSentence(
+                    step_number=index,
+                    sentence_number=1,
+                    text=line,
+                    descriptors=[],
+                )
+            ],
+        )
+        for index, line in enumerate(step_lines or [], start=1)
+    ]
+    version_two_steps = [
+        RecipeStep(
+            step_number=index,
+            sentences=[
+                RecipeSentence(
+                    step_number=index,
+                    sentence_number=1,
+                    text=line,
+                    descriptors=[],
+                )
+            ],
+        )
+        for index, line in enumerate(version_two_step_lines or step_lines or [], start=1)
+    ]
+    descriptors: list[DescriptorMatch] = []
+    chatbot_context = _build_chatbot_context(metadata, ingredients, steps, descriptors)
+    chunks = _build_chunks(metadata, ingredients, steps)
+    return RecipeDocument(
+        recipe_id=recipe_id,
+        title=title,
+        category=category,
+        url=url,
+        star_rating=star_rating,
+        review_count=review_count,
+        ingredients=ingredients,
+        steps=steps,
+        descriptors=descriptors,
+        descriptor_count=0,
+        descriptor_code_counts={},
+        chatbot_context=chatbot_context,
+        chunks=chunks,
+        version_two_ingredients=version_two_ingredients or ingredients,
+        version_two_steps=version_two_steps or steps,
+    )
 
 
 def _load_metadata(worksheet) -> dict[str, dict[str, object]]:
@@ -156,46 +267,111 @@ def _load_metadata(worksheet) -> dict[str, dict[str, object]]:
     return metadata
 
 
-def _load_ingredients(worksheet) -> dict[str, list[IngredientLine]]:
+def _load_ingredients(worksheet) -> tuple[dict[str, list[IngredientLine]], dict[str, list[IngredientLine]]]:
+    header_map = _header_index_map(worksheet)
+    version_two_text_index = _find_header_index(
+        header_map,
+        (
+            "version_2_ingredient_text",
+            "full_ingredient_text_version_2",
+            "full_ingredient_text_v2",
+            "ingredient_text_version_2",
+        ),
+    )
     ingredients_by_id: dict[str, list[IngredientLine]] = defaultdict(list)
+    version_two_ingredients_by_id: dict[str, list[IngredientLine]] = defaultdict(list)
     for row in worksheet.iter_rows(min_row=2, values_only=True):
         recipe_id = safe_text(row[0])
         if not looks_like_recipe_id(recipe_id):
             continue
-        ingredients_by_id[recipe_id].append(
-            IngredientLine(
-                line_number=to_int(row[1]),
-                full_text=safe_text(row[2]),
-                quantity=to_optional_text(row[3]),
-                unit=to_optional_text(row[4]),
-                ingredient_name=to_optional_text(row[5]),
-                notes=to_optional_text(row[6]),
-            )
+        ingredient = IngredientLine(
+            line_number=to_int(row[1]),
+            full_text=safe_text(row[2]),
+            quantity=to_optional_text(row[3]),
+            unit=to_optional_text(row[4]),
+            ingredient_name=to_optional_text(row[5]),
+            notes=to_optional_text(row[6]),
         )
+        ingredients_by_id[recipe_id].append(ingredient)
+        version_two_full_text = (
+            safe_text(row[version_two_text_index])
+            if version_two_text_index is not None and version_two_text_index < len(row)
+            else ""
+        )
+        if version_two_full_text:
+            version_two_ingredients_by_id[recipe_id].append(
+                IngredientLine(
+                    line_number=ingredient.line_number,
+                    full_text=version_two_full_text,
+                    quantity=ingredient.quantity,
+                    unit=ingredient.unit,
+                    ingredient_name=ingredient.ingredient_name,
+                    notes=ingredient.notes,
+                )
+            )
     for lines in ingredients_by_id.values():
         lines.sort(key=lambda item: item.line_number)
-    return ingredients_by_id
+    for lines in version_two_ingredients_by_id.values():
+        lines.sort(key=lambda item: item.line_number)
+    return ingredients_by_id, version_two_ingredients_by_id
 
 
-def _load_sentences(worksheet) -> dict[str, list[RecipeSentence]]:
+def _load_sentences(worksheet) -> tuple[dict[str, list[RecipeSentence]], dict[str, list[RecipeSentence]]]:
+    header_map = _header_index_map(worksheet)
+    version_two_sentence_index = _find_header_index(
+        header_map,
+        (
+            "version_2_sentence_text",
+            "full_sentence_text_version_2",
+            "full_sentence_text_v2",
+            "sentence_text_version_2",
+        ),
+    )
     sentences_by_id: dict[str, list[RecipeSentence]] = defaultdict(list)
+    version_two_sentences_by_id: dict[str, list[RecipeSentence]] = defaultdict(list)
+    seen_sentence_keys: set[tuple[str, int, int, str]] = set()
+    seen_version_two_sentence_keys: set[tuple[str, int, int, str]] = set()
     for row in worksheet.iter_rows(min_row=2, values_only=True):
         recipe_id = safe_text(row[0])
         if not looks_like_recipe_id(recipe_id):
             continue
+        step_number = to_int(row[1])
+        sentence_number = to_int(row[2])
         sentence_text = safe_text(row[3])
         if not sentence_text:
             continue
+        sentence_key = (recipe_id, step_number, sentence_number, sentence_text)
+        if sentence_key in seen_sentence_keys:
+            continue
+        seen_sentence_keys.add(sentence_key)
         sentences_by_id[recipe_id].append(
             RecipeSentence(
-                step_number=to_int(row[1]),
-                sentence_number=to_int(row[2]),
+                step_number=step_number,
+                sentence_number=sentence_number,
                 text=sentence_text,
             )
         )
+        version_two_sentence_text = (
+            safe_text(row[version_two_sentence_index])
+            if version_two_sentence_index is not None and version_two_sentence_index < len(row)
+            else ""
+        )
+        if version_two_sentence_text:
+            version_two_sentence_key = (recipe_id, step_number, sentence_number, version_two_sentence_text)
+            if version_two_sentence_key not in seen_version_two_sentence_keys:
+                seen_version_two_sentence_keys.add(version_two_sentence_key)
+                version_two_sentences_by_id[recipe_id].append(
+                    RecipeSentence(
+                        step_number=step_number,
+                        sentence_number=sentence_number,
+                        text=version_two_sentence_text,
+                    )
+                )
     for sentences in sentences_by_id.values():
         sentences.sort(key=lambda sentence: (sentence.step_number, sentence.sentence_number))
-    return sentences_by_id
+    for sentences in version_two_sentences_by_id.values():
+        sentences.sort(key=lambda sentence: (sentence.step_number, sentence.sentence_number))
+    return sentences_by_id, version_two_sentences_by_id
 
 
 def _load_descriptors(worksheet) -> dict[tuple[str, int, int], list[DescriptorMatch]]:
@@ -321,3 +497,24 @@ def _to_optional_int(value: object) -> int | None:
     if isinstance(value, float):
         return int(value)
     return int(float(str(value).strip()))
+
+
+def _header_index_map(worksheet) -> dict[str, int]:
+    header_map: dict[str, int] = {}
+    for index, value in enumerate(next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True))):
+        normalized = _normalize_header(value)
+        if normalized:
+            header_map[normalized] = index
+    return header_map
+
+
+def _find_header_index(header_map: dict[str, int], candidates: tuple[str, ...]) -> int | None:
+    for candidate in candidates:
+        if candidate in header_map:
+            return header_map[candidate]
+    return None
+
+
+def _normalize_header(value: object) -> str:
+    text = safe_text(value).casefold()
+    return "".join(character if character.isalnum() else "_" for character in text).strip("_")
