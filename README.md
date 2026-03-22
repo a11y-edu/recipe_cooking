@@ -26,13 +26,13 @@ Local Streamlit prototype for researching how to convert sighted-oriented recipe
 1. Install dependencies:
 
 ```bash
-python3 -m pip install -r /Users/smb/Documents/code/recipe_cooking/requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 2. Configure environment variables:
 
 ```bash
-cp /Users/smb/Documents/code/recipe_cooking/.env.example /Users/smb/Documents/code/recipe_cooking/.env
+cp .env.example .env
 ```
 
 Required values in `.env`:
@@ -45,7 +45,7 @@ Required values in `.env`:
 3. Run the app:
 
 ```bash
-streamlit run /Users/smb/Documents/code/recipe_cooking/app.py
+streamlit run app.py
 ```
 
 ## Validation
@@ -59,17 +59,17 @@ python3 -m compileall app.py recipe_app tests
 
 ## Project Layout
 
-- [`app.py`](/Users/smb/Documents/code/recipe_cooking/app.py): Streamlit entrypoint and UI flow.
-- [`recipe_app/data_loader.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/data_loader.py): Workbook ingestion, canonical recipe assembly, chunk building.
-- [`recipe_app/highlighting.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/highlighting.py): Descriptor span matching and fallback marker rendering.
-- [`recipe_app/transforms.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/transforms.py): Placeholder transformation interface for Panel 2.
-- [`recipe_app/rag.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/rag.py): OpenRouter-backed recipe-scoped retrieval and chat.
-- [`recipe_app/feedback.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/feedback.py): Anonymous preference event logging.
-- [`tests/test_app_core.py`](/Users/smb/Documents/code/recipe_cooking/tests/test_app_core.py): Ingestion, highlighting, feedback, and transform tests.
+- `app.py`: Streamlit entrypoint and UI flow.
+- `recipe_app/data_loader.py`: Workbook ingestion, canonical recipe assembly, chunk building.
+- `recipe_app/highlighting.py`: Descriptor span matching and fallback marker rendering.
+- `recipe_app/transforms.py`: Placeholder transformation interface for Panel 2.
+- `recipe_app/rag.py`: OpenRouter-backed recipe-scoped retrieval and chat.
+- `recipe_app/feedback.py`: Anonymous preference event logging.
+- `tests/test_app_core.py`: Ingestion, highlighting, feedback, and transform tests.
 
 ## Prompt Starters For Future Codex Sessions
 
-For future work, point Codex to the project skill at [`skills/accessible-recipe-research/SKILL.md`](/Users/smb/Documents/code/recipe_cooking/skills/accessible-recipe-research/SKILL.md) first.
+For future work, point Codex to the project skill at `skills/accessible-recipe-research/SKILL.md` first.
 
 Useful prompts:
 

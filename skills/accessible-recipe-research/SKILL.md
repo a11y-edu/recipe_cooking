@@ -13,13 +13,13 @@ description: Use when working on the accessible recipe Streamlit prototype in th
 
 ## First Pass
 
-1. Read [`README.md`](/Users/smb/Documents/code/recipe_cooking/README.md) for setup and current behavior.
+1. Read `README.md` for setup and current behavior.
 2. Inspect these files first:
-   - [`app.py`](/Users/smb/Documents/code/recipe_cooking/app.py)
-   - [`recipe_app/data_loader.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/data_loader.py)
-   - [`recipe_app/highlighting.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/highlighting.py)
-   - [`recipe_app/rag.py`](/Users/smb/Documents/code/recipe_cooking/recipe_app/rag.py)
-   - [`tests/test_app_core.py`](/Users/smb/Documents/code/recipe_cooking/tests/test_app_core.py)
+   - `app.py`
+   - `recipe_app/data_loader.py`
+   - `recipe_app/highlighting.py`
+   - `recipe_app/rag.py`
+   - `tests/test_app_core.py`
 
 ## Project Guardrails
 
@@ -45,4 +45,4 @@ If the task affects the running app, also do a brief local `streamlit run app.py
 
 ## For More Detail
 
-Read [`references/project-context.md`](/Users/smb/Documents/code/recipe_cooking/skills/accessible-recipe-research/references/project-context.md) for architecture notes, known limitations, and likely next-step tasks.
+Read `references/project-context.md` for architecture notes, known limitations, and likely next-step tasks.
